@@ -52,8 +52,7 @@ i386_detect_memory(void)
 	npages = totalmem / (PGSIZE / 1024);
 	npages_basemem = basemem / (PGSIZE / 1024);
 
-	cprintf("Physical memory: %uK available, base = %uK, extended = %uK\n",
-		totalmem, basemem, totalmem - basemem);
+	cprintf("Physical memory: %uK available, base = %uK, extended = %uK\n", totalmem, basemem, totalmem - basemem);
 }
 
 
@@ -102,8 +101,9 @@ boot_alloc(uint32_t n)
 	// to a multiple of PGSIZE.
 	//
 	// LAB 2: Your code here.
-
-	return NULL;
+	void* free_header = nextfree;
+	nextfree = ROUNDUP(nextfree+n, PGSIZE);
+	return free_header;
 }
 
 // Set up a two-level page table:
@@ -125,7 +125,7 @@ mem_init(void)
 	i386_detect_memory();
 
 	// Remove this line when you're ready to test this function.
-	panic("mem_init: This function is not finished\n");
+	//panic("mem_init: This function is not finished\n");
 
 	//////////////////////////////////////////////////////////////////////
 	// create initial page directory.
@@ -148,7 +148,9 @@ mem_init(void)
 	// array.  'npages' is the number of physical pages in memory.  Use memset
 	// to initialize all fields of each struct PageInfo to 0.
 	// Your code goes here:
-
+	uint32_t pageInfoArraySize = sizeof(struct PageInfo)*npages;
+	pages = (struct PageInfo* ) boot_alloc(pageInfoArraySize);
+	memset(pages, 0, pageInfoArraySize);
 
 	//////////////////////////////////////////////////////////////////////
 	// Now that we've allocated the initial kernel data structures, we set
@@ -251,9 +253,26 @@ page_init(void)
 	// Change the code to reflect this.
 	// NB: DO NOT actually touch the physical memory corresponding to
 	// free pages!
+	
+	// mark the first physical page in use
+	pages[0].pp_ref = 1;
 	size_t i;
-	for (i = 0; i < npages; i++) {
+	// intialize the pages from [PGSIZE, npages_basemem]
+	for (i = 1; i < npages_basemem; ++i) {
+		pages[i].pp_link = page_free_list;
+		page_free_list = &pages[i];
+	}
+	// set the mmio in use
+	for (i = IOPHYSMEM/PGSIZE; i < EXTPHYSMEM/PGSIZE; ++i){
+		pages[i].pp_ref = 1;
+	}
+	// skip the mapped io holes
+	// initialize the mem between [CURKEREND, EXTENED]
+	uint32_t CURKERNEND= PADDR(boot_alloc(0));
+	for (i = EXTPHYSMEM/PGSIZE; i < (CURKERNEND/PGSIZE); ++i){
 		pages[i].pp_ref = 0;
+	}
+	for (i = (CURKERNEND/PGSIZE); i < npages; ++i ){
 		pages[i].pp_link = page_free_list;
 		page_free_list = &pages[i];
 	}
@@ -274,8 +293,19 @@ page_init(void)
 struct PageInfo *
 page_alloc(int alloc_flags)
 {
-	// Fill this function in
-	return 0;
+	// return NULL if no more free pages
+	if (!page_free_list){
+		return NULL;
+	}
+	// update the free_list to next one
+	struct PageInfo* ret = page_free_list;
+	page_free_list = ret->pp_link;
+	// set the physical page by alloc_flags
+	if (alloc_flags & ALLOC_ZERO){
+		memset(page2kva(ret), '\0', PGSIZE);
+	}
+	ret->pp_link = NULL;
+	return ret;
 }
 
 //
@@ -288,6 +318,12 @@ page_free(struct PageInfo *pp)
 	// Fill this function in
 	// Hint: You may want to panic if pp->pp_ref is nonzero or
 	// pp->pp_link is not NULL.
+	if (pp->pp_ref || pp->pp_link){
+		panic("free a page which reference is not zero or pp_link is not NULL\n");
+	}
+	pp->pp_link = page_free_list;
+	page_free_list = pp;
+	return;
 }
 
 //
@@ -492,6 +528,7 @@ check_page_free_list(bool only_low_memory)
 
 	assert(nfree_basemem > 0);
 	assert(nfree_extmem > 0);
+	cprintf("check page free list succeeded!\n");
 }
 
 //
