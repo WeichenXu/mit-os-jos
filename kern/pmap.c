@@ -362,8 +362,28 @@ page_decref(struct PageInfo* pp)
 pte_t *
 pgdir_walk(pde_t *pgdir, const void *va, int create)
 {
-	// Fill this function in
-	return NULL;
+	uint32_t pdx = PDX(va);
+	uint32_t ptx = PTX(va); 
+	struct PageInfo *pp;
+	pde_t *pde;
+	pte_t *pte;
+	
+	// get the pde
+	pde = &pgdir[pdx];
+	if (*pde & PTE_P){
+		// get the page table kv address
+		pte = KADDR(PTE_ADDR(*pde));
+	}
+	else{
+		// create the new page table entry if necessary
+		if (!create || !(pp = page_alloc(ALLOC_ZERO))){
+			return NULL;
+		}
+		++(pp->pp_ref);
+		*pde = page2pa(pp) | PTE_P | PTE_U | PTE_W;
+		pte = KADDR(page2pa(pp));
+	}
+	return &pte[ptx];
 }
 
 //
@@ -380,9 +400,19 @@ pgdir_walk(pde_t *pgdir, const void *va, int create)
 static void
 boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm)
 {
-	// Fill this function in
+	size_t i;
+	for(i = 0; i < size; i += PGSIZE){
+		// get the pte ptr
+		// cast the va to void* to indicate this is linear addr
+		pte_t *pte = pgdir_walk(pgdir, (void*)va, true);
+		if (!pte){
+			return;
+		}
+		*pte = PTE_ADDR(pa) | perm | PTE_P;
+		pa += size; 
+		va += size;
+	}
 }
-
 //
 // Map the physical page 'pp' at virtual address 'va'.
 // The permissions (the low 12 bits) of the page table entry
@@ -411,7 +441,23 @@ boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm
 int
 page_insert(pde_t *pgdir, struct PageInfo *pp, void *va, int perm)
 {
-	// Fill this function in
+	pte_t *pte = pgdir_walk(pgdir, va, true);
+	// no memory allocated for pte
+	if (!pte){
+		return -E_NO_MEM;
+	}
+	// if the pte is already mapped
+	if (*pte & PTE_P){
+		// if mapping the same pp
+		if (PTE_ADDR(*pte) == page2pa(pp)){
+			*pte = page2pa(pp) | perm | PTE_P;
+			return 0;
+		}	
+		page_remove(pgdir, va);
+	}
+	// allocate and map the new va
+	++(pp->pp_ref);
+	*pte = page2pa(pp) | perm | PTE_P;
 	return 0;
 }
 
@@ -429,8 +475,14 @@ page_insert(pde_t *pgdir, struct PageInfo *pp, void *va, int perm)
 struct PageInfo *
 page_lookup(pde_t *pgdir, void *va, pte_t **pte_store)
 {
-	// Fill this function in
-	return NULL;
+	pte_t *pte = pgdir_walk(pgdir, va, false);
+	if (!pte){
+		return NULL;
+	}
+	if (pte_store){
+		*pte_store = pte;
+	}
+	return pa2page(PTE_ADDR(*pte));
 }
 
 //
@@ -451,7 +503,16 @@ page_lookup(pde_t *pgdir, void *va, pte_t **pte_store)
 void
 page_remove(pde_t *pgdir, void *va)
 {
-	// Fill this function in
+	pte_t *pte;
+	pte_t **pte_store = &pte;
+	struct PageInfo* pp = page_lookup(pgdir, va, pte_store);
+	if (!pp){
+		return;
+	}
+	page_decref(pp);
+	**pte_store = 0;
+	tlb_invalidate(pgdir, va);
+	return;
 }
 
 //
