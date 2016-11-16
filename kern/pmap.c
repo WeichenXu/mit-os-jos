@@ -174,7 +174,8 @@ mem_init(void)
 	//      (ie. perm = PTE_U | PTE_P)
 	//    - pages itself -- kernel RW, user NONE
 	// Your code goes here:
-
+	boot_map_region(kern_pgdir, UPAGES, pageInfoArraySize , PADDR(pages), PTE_U | PTE_P);
+	boot_map_region(kern_pgdir, (uintptr_t)page2kva(pages), pageInfoArraySize, PADDR(pages), PTE_W | PTE_P);
 	//////////////////////////////////////////////////////////////////////
 	// Use the physical memory that 'bootstack' refers to as the kernel
 	// stack.  The kernel stack grows down from virtual address KSTACKTOP.
@@ -186,7 +187,7 @@ mem_init(void)
 	//       overwrite memory.  Known as a "guard page".
 	//     Permissions: kernel RW, user NONE
 	// Your code goes here:
-
+	boot_map_region(kern_pgdir, KSTACKTOP-KSTKSIZE, KSTKSIZE, PADDR(bootstack), PTE_P | PTE_W);
 	//////////////////////////////////////////////////////////////////////
 	// Map all of physical memory at KERNBASE.
 	// Ie.  the VA range [KERNBASE, 2^32) should map to
@@ -195,7 +196,7 @@ mem_init(void)
 	// we just set up the mapping anyway.
 	// Permissions: kernel RW, user NONE
 	// Your code goes here:
-
+	boot_map_region(kern_pgdir, KERNBASE, (~0x0) - KERNBASE + 1, 0, PTE_P | PTE_W);
 	// Check that the initial page directory has been set up correctly.
 	check_kern_pgdir();
 
@@ -404,13 +405,12 @@ boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm
 	for(i = 0; i < size; i += PGSIZE){
 		// get the pte ptr
 		// cast the va to void* to indicate this is linear addr
-		pte_t *pte = pgdir_walk(pgdir, (void*)va, true);
+		pte_t *pte = pgdir_walk(pgdir, (void *)(i+va), true);
 		if (!pte){
 			return;
 		}
 		*pte = PTE_ADDR(pa) | perm | PTE_P;
-		pa += size; 
-		va += size;
+		pa += PGSIZE; 
 	}
 }
 //
@@ -693,8 +693,9 @@ check_kern_pgdir(void)
 
 
 	// check phys mem
-	for (i = 0; i < npages * PGSIZE; i += PGSIZE)
+	for (i = 0; i < npages * PGSIZE; i += PGSIZE){
 		assert(check_va2pa(pgdir, KERNBASE + i) == i);
+	}
 
 	// check kernel stack
 	for (i = 0; i < KSTKSIZE; i += PGSIZE)
