@@ -568,9 +568,21 @@ static uintptr_t user_mem_check_addr;
 int
 user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 {
-	// LAB 3: Your code here.
-
-	return 0;
+    // LAB 3: Your code here.
+    const void* start = ROUNDDOWN(va, PGSIZE);
+    const void* end = ROUNDDOWN(va+len, PGSIZE);
+    pte_t *pt;
+    for (; start <= end; start += PGSIZE){
+        pt = pgdir_walk(env->env_pgdir, start, 0);
+        
+        // Current page is not in the page table or permission error
+        if (pt == NULL || ((*pt & perm) != perm)){
+            user_mem_check_addr = (uintptr_t)
+                (start < va ? va:start);
+            return -E_FAULT;
+        }
+    }
+    return 0;
 }
 
 //
