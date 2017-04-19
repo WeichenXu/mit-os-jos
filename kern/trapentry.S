@@ -47,10 +47,38 @@
 /*
  * Lab 3: Your code here for generating entry points for the different traps.
  */
-
-
-
+TRAPHANDLER_NOEC(divide_error_entry, T_DIVIDE)
+TRAPHANDLER_NOEC(debug_entry, T_DEBUG)
+TRAPHANDLER_NOEC(non_maskable_interrupt_entry, T_NMI)
+TRAPHANDLER_NOEC(breakpoint_entry, T_BRKPT)
+TRAPHANDLER_NOEC(overflow_entry, T_OFLOW)
+TRAPHANDLER_NOEC(bound_range_exceed_entry, T_BOUND)
+TRAPHANDLER_NOEC(invalid_opcode_entry, T_ILLOP)
+TRAPHANDLER_NOEC(device_not_available_entry, T_DEVICE)
+TRAPHANDLER(double_fault_entry, T_DBLFLT)
+//TRAPHANDLER_NOEC(coprocessor_segment_overrun_entry, )
+TRAPHANDLER(invalid_tss_entry, T_TSS)
+TRAPHANDLER(segment_not_present_entry, T_SEGNP)
+TRAPHANDLER(stack_fault_entry, T_STACK)
+TRAPHANDLER(general_protection_entry, T_GPFLT)
+TRAPHANDLER(page_fault_entry, T_PGFLT)
+TRAPHANDLER_NOEC(x877_fpu_floating_pt_error_entry, T_FPERR)
+TRAPHANDLER_NOEC(alignment_check_entry, T_ALIGN)
+TRAPHANDLER_NOEC(machine_check_entry, T_MCHK)
+TRAPHANDLER_NOEC(simd_floating_point_exception_entry, T_SIMDERR)
+TRAPHANDLER_NOEC(system_call_entry, T_SYSCALL)
 /*
  * Lab 3: Your code here for _alltraps
  */
+.global _alltraps
+_alltraps:
+   pushl %ds
+   pushl %es
+   pushal
+   movw $GD_KD, %ax
+   movw %ax, %ds
+   movw %ax, %es
+   pushl %esp
+   call trap
 
+// Function pointers for the Trap Handler
